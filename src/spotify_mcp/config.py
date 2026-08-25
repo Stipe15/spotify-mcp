@@ -1,0 +1,110 @@
+"""Runtime configuration: environment variables, .env, and derived paths."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import platformdirs
+from dotenv import load_dotenv
+
+from spotify_mcp.errors import ConfigError
+
+APP_NAME = "spotify-mcp"
+APP_AUTHOR = "spotify-mcp"
+
+# Minimum scopes needed for the tools this server exposes. See PLAN.md §3 for
+# the justification of each entry, and for the scopes deliberately omitted.
+DEFAULT_SCOPES = [
+    "playlist-read-private",
+    "playlist-read-collaborative",
+    "playlist-modify-private",
+    "playlist-modify-public",
+    "ugc-image-upload",
+    "user-top-read",
+    "user-read-recently-played",
+    "user-library-read",
+    "user-follow-read",
+    "user-read-playback-state",
+]
+
+AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+API_BASE_URL = "https://api.spotify.com/v1"
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    return int(raw) if raw else default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    return float(raw) if raw else default
+
+
+@dataclass(frozen=True)
+class Settings:
+    client_id: str
+    redirect_port: int = 8888
+    redirect_path: str = "/callback"
+    scopes: list[str] = field(default_factory=lambda: list(DEFAULT_SCOPES))
+
+    dry_run: bool = False
+    log_level: str = "INFO"
+
+    max_concurrency: int = 4
+    calls_per_30s: int = 90
+    max_retries: int = 3
+    request_timeout_s: float = 15.0
+    token_expiry_skew_s: int = 60
+
+    config_dir: Path = field(
+        default_factory=lambda: Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR))
+    )
+    data_dir: Path = field(
+        default_factory=lambda: Path(platformdirs.user_data_dir(APP_NAME, APP_AUTHOR))
+    )
+    cache_dir: Path = field(
+        default_factory=lambda: Path(platformdirs.user_cache_dir(APP_NAME, APP_AUTHOR))
+    )
+
+    @property
+    def redirect_uri(self) -> str:
+        return f"http://127.0.0.1:{self.redirect_port}{self.redirect_path}"
+
+    @property
+    def token_path(self) -> Path:
+        return self.config_dir / "token.json"
+
+    @classmethod
+    def load(cls) -> Settings:
+        load_dotenv()
+        client_id = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
+        if not client_id:
+            raise ConfigError(
+                "SPOTIFY_CLIENT_ID is not set. Copy .env.example to .env, create a Spotify "
+                "app at https://developer.spotify.com/dashboard, and paste its Client ID in."
+            )
+        settings = cls(
+            client_id=client_id,
+            redirect_port=_env_int("SPOTIFY_REDIRECT_PORT", 8888),
+            dry_run=_env_bool("SPOTIFY_MCP_DRY_RUN", False),
+            log_level=os.environ.get("SPOTIFY_MCP_LOG_LEVEL", "INFO").upper(),
+            max_concurrency=_env_int("SPOTIFY_MCP_MAX_CONCURRENCY", 4),
+            calls_per_30s=_env_int("SPOTIFY_MCP_CALLS_PER_30S", 90),
+            max_retries=_env_int("SPOTIFY_MCP_MAX_RETRIES", 3),
+            request_timeout_s=_env_float("SPOTIFY_MCP_REQUEST_TIMEOUT_S", 15.0),
+        )
+        settings.config_dir.mkdir(parents=True, exist_ok=True)
+        settings.data_dir.mkdir(parents=True, exist_ok=True)
+        settings.cache_dir.mkdir(parents=True, exist_ok=True)
+        return settings
