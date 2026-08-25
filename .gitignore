@@ -11,3 +11,4 @@ docs/observed_shapes.md
 .ruff_cache/
 .pytest_cache/
 *.egg-info/
+PLAN.md
