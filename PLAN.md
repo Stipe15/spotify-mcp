@@ -196,7 +196,7 @@ and returns a preview. See §6.
 | --- | --- | --- | --- |
 | `create_playlist` | `name`, `description?`, `public=false`, `collaborative=false`, `confirm_token?` | name, visibility, that it will be empty | `POST /me/playlists` |
 | `add_playlist_items` | `playlist_id`, `uris[]`, `position?`, `confirm_token?` | target playlist name + current size, full track list to be added, resulting size, batch count | `POST /playlists/{id}/items` (chunked at 100) |
-| `replace_playlist_items` | `playlist_id`, `uris[]`, `confirm_token?` | **what will be lost** (current contents) vs. what replaces it | `PUT /playlists/{id}/items` (replace mode) |
+| `replace_playlist_items` `D` | `playlist_id`, `uris[]`, `confirm_token?` | **what will be lost** (current contents) vs. what replaces it | `PUT /playlists/{id}/items` (replace mode) |
 | `reorder_playlist_items` | `playlist_id`, `range_start`, `insert_before`, `range_length=1`, `snapshot_id?`, `confirm_token?` | the moved slice, before/after positions | `PUT /playlists/{id}/items` (reorder mode) |
 | `update_playlist_details` | `playlist_id`, `name?`, `description?`, `public?`, `confirm_token?` | field-by-field old → new diff | `PUT /playlists/{id}` |
 | `set_playlist_cover` | `playlist_id`, `image_path`, `confirm_token?` | file, dimensions, encoded size vs. the 256 KB cap | `PUT /playlists/{id}/images` |
@@ -206,6 +206,33 @@ and returns a preview. See §6.
 config, requires an explicit `snapshot_id` the model must have fetched first, and its
 description states it must never be invoked from a general instruction. Per your guardrail,
 there is no "clean up my library" path to it.
+
+> **Phase 3 update:** `replace_playlist_items` is also marked `destructive_hint=True` — it
+> discards the playlist's existing contents just as surely as a removal, even though the
+> original table only tagged `remove_playlist_items`. It is not config-gated behind
+> `allow_removals` the way removal is, since "rebuild this playlist" is a normal, intentional
+> workflow (e.g. refreshing the chart pipeline's output in §7) — but its preview always shows
+> what's being lost, and it still requires confirm_token like every other write.
+>
+> Every write tool returns one concrete shape, `WriteToolResult` (`status`,
+> `confirm_token`/`expires_at`/`preview`/`next_step` when a confirmation is pending; `result`
+> when executed or dry-run) — not the differently-shaped dicts originally sketched here. Same
+> reason as `get_top_items` splitting in Phase 2: the MCP SDK wraps non-model return types in
+> `{"result": ...}`, so one stable model keeps every write tool's output clean and predictable
+> for the model to parse.
+>
+> A `confirm_token` is burned on any consume attempt, not only a successful one — a mismatched
+> retry doesn't get a second try against the same token. This is deliberate: allowing repeated
+> attempts against one token would let a mismatched call be retried until something happens to
+> match, which is exactly the trial-and-error the token is meant to rule out. A genuine mistake
+> just costs a fresh preview, which is cheap.
+>
+> Verified end-to-end against the real account with `dry_run=true`: preview → mutated-args
+> rejection (token burned) → fresh preview → correct execution → reuse rejection, plus
+> `add_playlist_items`'s preview against a real playlist and `remove_playlist_items`'s refusal
+> while disabled. No actual write was sent — I did not create a real playlist on your account
+> myself; that's the one Phase 3 check I left for you to do in Claude Desktop, the same way you
+> verified Phases 1 and 2.
 
 Description text for `add_playlist_items`: *"Spotify accepts at most 100 URIs per request; this
 tool chunks automatically but each chunk is a separate call, so 250 tracks = 3 calls. Adding is

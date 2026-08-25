@@ -12,62 +12,16 @@ import json
 
 import httpx2
 import pytest
-from mcp.server import MCPServer
-from mcp.server.context import ServerRequestContext
-from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
-from spotify_mcp.api.client import SpotifyClient
-from spotify_mcp.auth.manager import TokenManager
 from spotify_mcp.config import Settings
-from spotify_mcp.server import AppContext
 from spotify_mcp.tools import read_live
 
-
-class FixedTokenManager(TokenManager):
-    """Bypasses real auth/store entirely; always reports authorized."""
-
-    def __init__(self):
-        self._token = None  # unused by bearer_token override below
-
-    async def bearer_token(self) -> str:
-        return "AT"
-
-    async def force_refresh(self) -> str:
-        return "AT"
-
-    @property
-    def is_authorized(self) -> bool:
-        return True
-
-    @property
-    def granted_scopes(self) -> list[str]:
-        return []
-
-    @property
-    def expires_in_s(self) -> float | None:
-        return 3600.0
-
-    async def aclose(self) -> None:
-        pass
+from .conftest import make_server_and_ctx as _make_server_and_ctx
 
 
-def make_server_and_ctx(settings: Settings, handler) -> tuple[MCPServer, Context]:
-    mcp = MCPServer("test")
-    read_live.register(mcp)
-
-    transport = httpx2.MockTransport(handler)
-    spotify = SpotifyClient(settings, FixedTokenManager(), transport=transport)
-    app_ctx = AppContext(settings=settings, token_manager=FixedTokenManager(), spotify=spotify)
-
-    req_ctx = ServerRequestContext(
-        session=None,  # type: ignore[arg-type]  # not touched by any tool here
-        lifespan_context=app_ctx,
-        protocol_version="2025-06-18",
-        method="tools/call",
-    )
-    ctx = Context(request_context=req_ctx, mcp_server=mcp)
-    return mcp, ctx
+def make_server_and_ctx(settings: Settings, handler):
+    return _make_server_and_ctx(settings, handler, read_live.register)
 
 
 def _captured_query(request: httpx2.Request) -> str:

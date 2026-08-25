@@ -12,6 +12,7 @@ from spotify_mcp.api.client import SpotifyClient
 from spotify_mcp.auth.manager import TokenManager
 from spotify_mcp.config import Settings
 from spotify_mcp.logging import configure, get_logger
+from spotify_mcp.tools.confirm import ConfirmationStore
 
 logger = get_logger("server")
 
@@ -21,6 +22,7 @@ class AppContext:
     settings: Settings
     token_manager: TokenManager
     spotify: SpotifyClient
+    confirmations: ConfirmationStore
 
 
 def build_server(settings: Settings) -> MCPServer:
@@ -30,13 +32,20 @@ def build_server(settings: Settings) -> MCPServer:
     async def lifespan(_: MCPServer) -> AsyncIterator[AppContext]:
         token_manager = TokenManager(settings)
         spotify = SpotifyClient(settings, token_manager)
+        confirmations = ConfirmationStore(ttl_s=settings.confirm_token_ttl_s)
         logger.info(
-            "spotify-mcp starting: dry_run=%s authorized=%s",
+            "spotify-mcp starting: dry_run=%s authorized=%s allow_removals=%s",
             settings.dry_run,
             token_manager.is_authorized,
+            settings.allow_removals,
         )
         try:
-            yield AppContext(settings=settings, token_manager=token_manager, spotify=spotify)
+            yield AppContext(
+                settings=settings,
+                token_manager=token_manager,
+                spotify=spotify,
+                confirmations=confirmations,
+            )
         finally:
             await spotify.aclose()
             await token_manager.aclose()
@@ -58,9 +67,10 @@ def build_server(settings: Settings) -> MCPServer:
 
     # Deferred: tools/*.py import AppContext from this module, so importing
     # them at module scope here would be circular.
-    from spotify_mcp.tools import read_live, system  # noqa: PLC0415
+    from spotify_mcp.tools import read_live, system, write_playlists  # noqa: PLC0415
 
     system.register(mcp)
     read_live.register(mcp)
+    write_playlists.register(mcp)
 
     return mcp

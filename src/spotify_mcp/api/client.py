@@ -55,6 +55,15 @@ class SpotifyClient:
     ) -> dict[str, Any]:
         return await self._request("PUT", path, json=json, params=params)
 
+    async def put_raw(
+        self, path: str, *, content: str | bytes, content_type: str
+    ) -> dict[str, Any]:
+        """PUT with a raw body and explicit Content-Type — for endpoints like
+        cover-image upload that take the payload verbatim, not as JSON."""
+        return await self._request(
+            "PUT", path, content=content, extra_headers={"Content-Type": content_type}
+        )
+
     async def delete(
         self, path: str, *, json: Any | None = None, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -67,14 +76,30 @@ class SpotifyClient:
         *,
         params: dict[str, Any] | None = None,
         json: Any | None = None,
+        content: str | bytes | None = None,
+        extra_headers: dict[str, str] | None = None,
         _retried_401: bool = False,
     ) -> dict[str, Any]:
         if self._settings.dry_run and method != "GET":
-            logger.info("[DRY RUN] %s %s params=%r json=%r", method, path, params, json)
-            return {"dry_run": True, "method": method, "path": path, "params": params, "json": json}
+            body_repr = content if content is None else f"<{len(content)} bytes>"
+            logger.info(
+                "[DRY RUN] %s %s params=%r json=%r content=%r",
+                method,
+                path,
+                params,
+                json,
+                body_repr,
+            )
+            return {
+                "dry_run": True,
+                "method": method,
+                "path": path,
+                "params": params,
+                "json": json,
+            }
 
         token = await self._tokens.bearer_token()
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {token}", **(extra_headers or {})}
 
         attempt = 0
         while True:
@@ -82,7 +107,7 @@ class SpotifyClient:
             async with self._semaphore:
                 try:
                     response = await self._http.request(
-                        method, path, params=params, json=json, headers=headers
+                        method, path, params=params, json=json, content=content, headers=headers
                     )
                 except httpx2.TransportError as exc:
                     attempt += 1
@@ -99,7 +124,13 @@ class SpotifyClient:
                 new_token = await self._tokens.force_refresh()
                 headers["Authorization"] = f"Bearer {new_token}"
                 return await self._request(
-                    method, path, params=params, json=json, _retried_401=True
+                    method,
+                    path,
+                    params=params,
+                    json=json,
+                    content=content,
+                    extra_headers=extra_headers,
+                    _retried_401=True,
                 )
 
             if response.status_code == 429:

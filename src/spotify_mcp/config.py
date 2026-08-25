@@ -61,6 +61,11 @@ class Settings:
     dry_run: bool = False
     log_level: str = "INFO"
 
+    # Off by default: removing playlist items is the one truly destructive
+    # write this server exposes (PLAN.md §6). Must be explicitly opted into.
+    allow_removals: bool = False
+    confirm_token_ttl_s: int = 600
+
     max_concurrency: int = 4
     calls_per_30s: int = 90
     max_retries: int = 3
@@ -99,6 +104,7 @@ class Settings:
             redirect_port=_env_int("SPOTIFY_REDIRECT_PORT", 8888),
             dry_run=_env_bool("SPOTIFY_MCP_DRY_RUN", False),
             log_level=os.environ.get("SPOTIFY_MCP_LOG_LEVEL", "INFO").upper(),
+            allow_removals=_env_bool("SPOTIFY_MCP_ALLOW_REMOVALS", False),
             max_concurrency=_env_int("SPOTIFY_MCP_MAX_CONCURRENCY", 4),
             calls_per_30s=_env_int("SPOTIFY_MCP_CALLS_PER_30S", 90),
             max_retries=_env_int("SPOTIFY_MCP_MAX_RETRIES", 3),

@@ -3,8 +3,8 @@
 A personal MCP server for managing your Spotify playlists and querying your
 local listening-history analytics from Claude. See [PLAN.md](PLAN.md) for the
 full design. This README currently covers **Phase 1** (auth + API client
-skeleton) and **Phase 2** (live read tools) — it will grow as later phases
-land.
+skeleton), **Phase 2** (live read tools), and **Phase 3** (playlist writes) —
+it will grow as later phases land.
 
 ## Setup
 
@@ -48,8 +48,9 @@ land.
    ```
 
    With `SPOTIFY_MCP_DRY_RUN=true` (the `.env.example` default), no write
-   ever reaches Spotify — writes are logged instead. Flip it to `false` once
-   you've verified previews look right (write tools land in Phase 3).
+   ever reaches Spotify — writes are logged instead, and every write tool's
+   response says `"status": "dry_run"` so it's unmistakable. Flip it to
+   `false` once you've verified previews look right.
 
 ## Wiring into Claude Desktop
 
@@ -66,11 +67,35 @@ Add to your Claude Desktop MCP config (`claude_desktop_config.json`):
 }
 ```
 
-Restart Claude Desktop. You should see 17 tools: `get_me`, `server_status`,
-and 15 read-only tools covering playback state, top artists/tracks, recently
-played, saved tracks/albums, followed artists, playlists, catalog search, and
-track/artist/album metadata. Nothing here writes to your account yet — that's
-Phase 3.
+Restart Claude Desktop. You should see 24 tools: `get_me`, `server_status`,
+15 read-only tools (playback state, top artists/tracks, recently played,
+saved tracks/albums, followed artists, playlists, catalog search,
+track/artist/album metadata), and 7 playlist write tools.
+
+## Playlist writes and confirmation
+
+Every write tool (`create_playlist`, `add_playlist_items`,
+`replace_playlist_items`, `reorder_playlist_items`,
+`update_playlist_details`, `set_playlist_cover`, `remove_playlist_items`) is
+two-phase: call it once and it returns a preview plus a one-time
+`confirm_token` — nothing is sent to Spotify yet. Call it again with that
+token and the *exact same arguments* to actually execute; changing anything
+invalidates the token, and a token can only be used once regardless of
+whether that attempt succeeds. Claude should always show you the preview
+before calling back with the token.
+
+`remove_playlist_items` is disabled by default — it's the one genuinely
+destructive tool here (deleting items from a playlist). Set
+`SPOTIFY_MCP_ALLOW_REMOVALS=true` in `.env` if you want it available.
+`replace_playlist_items` also discards existing content and always shows
+what would be lost in its preview, but isn't gated behind that flag —
+rebuilding a playlist's contents wholesale is an intentional, ordinary
+workflow (Phase 5's chart-to-playlist pipeline will use it).
+
+A local audit log of every executed (or dry-run) write is kept at
+`<user data dir>/spotify-mcp/audit.jsonl` — one JSON line per write, with a
+timestamp, the action, a hash of its arguments, and the resulting
+`snapshot_id` where relevant.
 
 ## Checking what the API actually returns
 
