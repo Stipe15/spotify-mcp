@@ -56,10 +56,11 @@ def build_server(settings: Settings) -> MCPServer:
         lifespan=lifespan,
     )
 
-    from spotify_mcp.tools import (
-        system,  # noqa: PLC0415 — deferred to avoid import-time server dependency
-    )
+    # Deferred: tools/*.py import AppContext from this module, so importing
+    # them at module scope here would be circular.
+    from spotify_mcp.tools import read_live, system  # noqa: PLC0415
 
     system.register(mcp)
+    read_live.register(mcp)
 
     return mcp

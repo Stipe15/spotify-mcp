@@ -23,8 +23,8 @@ class ServerStatus(BaseModel):
 def register(mcp: MCPServer) -> None:
     @mcp.tool(
         description=(
-            "Return the current user's Spotify profile: id, display name, uri, images. "
-            "Note: email, country, product tier, and follower count were removed from this "
+            "Return the current user's Spotify profile: id, display name, uri, images, "
+            "follower count. Note: email, country, and product tier were removed from this "
             "endpoint by Spotify in February 2026 and are never present."
         ),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),

@@ -3,9 +3,10 @@
 A personal MCP server for managing your Spotify playlists and querying your
 local listening-history analytics from Claude. See [PLAN.md](PLAN.md) for the
 full design. This README currently covers **Phase 1** (auth + API client
-skeleton) — it will grow as later phases land.
+skeleton) and **Phase 2** (live read tools) — it will grow as later phases
+land.
 
-## Setup (Phase 1)
+## Setup
 
 1. **Create a Spotify app.** Go to the
    [Spotify Developer Dashboard](https://developer.spotify.com/dashboard),
@@ -65,9 +66,28 @@ Add to your Claude Desktop MCP config (`claude_desktop_config.json`):
 }
 ```
 
-Restart Claude Desktop. You should see `get_me` and `server_status` in its
-tool list — Phase 1's two tools, enough to confirm the connection works
-end-to-end.
+Restart Claude Desktop. You should see 17 tools: `get_me`, `server_status`,
+and 15 read-only tools covering playback state, top artists/tracks, recently
+played, saved tracks/albums, followed artists, playlists, catalog search, and
+track/artist/album metadata. Nothing here writes to your account yet — that's
+Phase 3.
+
+## Checking what the API actually returns
+
+Spotify's Web API changed substantially in 2026, and the reference docs
+still show some fields (`popularity`, `preview_url`, ...) marked
+"Deprecated" rather than confirming they're gone. Rather than guess, this
+repo checks empirically:
+
+```bash
+uv run python scripts/probe_api.py
+```
+
+This hits each endpoint once with your authorized account (read-only) and
+writes `docs/observed_shapes.md` — the actual response shapes this app's
+Dev Mode tier receives. That file is gitignored (it can contain your own
+playlist/listening data); re-run it any time you want current ground truth
+instead of relying on this repo's models being right.
 
 ## Where things live
 
