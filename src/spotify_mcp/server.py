@@ -67,10 +67,11 @@ def build_server(settings: Settings) -> MCPServer:
 
     # Deferred: tools/*.py import AppContext from this module, so importing
     # them at module scope here would be circular.
-    from spotify_mcp.tools import read_live, system, write_playlists  # noqa: PLC0415
+    from spotify_mcp.tools import read_live, read_local, system, write_playlists  # noqa: PLC0415
 
     system.register(mcp)
     read_live.register(mcp)
     write_playlists.register(mcp)
+    read_local.register(mcp)
 
     return mcp

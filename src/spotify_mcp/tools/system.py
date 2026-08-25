@@ -45,7 +45,7 @@ def register(mcp: MCPServer) -> None:
     )
     async def server_status(ctx: Context) -> ServerStatus:
         app: AppContext = ctx.request_context.lifespan_context
-        analytics_db_present = app.settings.data_dir.joinpath("listening.duckdb").exists()
+        analytics_db_present = app.settings.analytics_db_path.exists()
         return ServerStatus(
             dry_run=app.settings.dry_run,
             authorized=app.token_manager.is_authorized,

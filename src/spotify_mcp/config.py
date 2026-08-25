@@ -72,6 +72,16 @@ class Settings:
     request_timeout_s: float = 15.0
     token_expiry_skew_s: int = 60
 
+    # Local analytics store (PLAN.md §4). IANA zone name, e.g. "Europe/Zagreb" —
+    # there is no reliable cross-platform way to auto-detect this without an
+    # extra dependency, so it's explicit. "UTC" is a safe but timezone-blind
+    # default: hour-of-day analysis will be in UTC, not your local time, until set.
+    local_timezone: str = "UTC"
+    skip_ms_threshold: int = 30_000
+    substantial_ms: int = 30_000
+    query_timeout_s: float = 10.0
+    analytics_max_rows: int = 5_000
+
     config_dir: Path = field(
         default_factory=lambda: Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR))
     )
@@ -89,6 +99,10 @@ class Settings:
     @property
     def token_path(self) -> Path:
         return self.config_dir / "token.json"
+
+    @property
+    def analytics_db_path(self) -> Path:
+        return self.data_dir / "listening.duckdb"
 
     @classmethod
     def load(cls) -> Settings:
@@ -109,6 +123,11 @@ class Settings:
             calls_per_30s=_env_int("SPOTIFY_MCP_CALLS_PER_30S", 90),
             max_retries=_env_int("SPOTIFY_MCP_MAX_RETRIES", 3),
             request_timeout_s=_env_float("SPOTIFY_MCP_REQUEST_TIMEOUT_S", 15.0),
+            local_timezone=os.environ.get("SPOTIFY_MCP_TIMEZONE", "UTC"),
+            skip_ms_threshold=_env_int("SPOTIFY_MCP_SKIP_MS_THRESHOLD", 30_000),
+            substantial_ms=_env_int("SPOTIFY_MCP_SUBSTANTIAL_MS", 30_000),
+            query_timeout_s=_env_float("SPOTIFY_MCP_QUERY_TIMEOUT_S", 10.0),
+            analytics_max_rows=_env_int("SPOTIFY_MCP_ANALYTICS_MAX_ROWS", 5_000),
         )
         settings.config_dir.mkdir(parents=True, exist_ok=True)
         settings.data_dir.mkdir(parents=True, exist_ok=True)

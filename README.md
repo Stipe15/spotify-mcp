@@ -3,8 +3,9 @@
 A personal MCP server for managing your Spotify playlists and querying your
 local listening-history analytics from Claude. See [PLAN.md](PLAN.md) for the
 full design. This README currently covers **Phase 1** (auth + API client
-skeleton), **Phase 2** (live read tools), and **Phase 3** (playlist writes) —
-it will grow as later phases land.
+skeleton), **Phase 2** (live read tools), **Phase 3** (playlist writes), and
+**Phase 4** (local listening-history analytics) — it will grow as later
+phases land.
 
 ## Setup
 
@@ -67,10 +68,11 @@ Add to your Claude Desktop MCP config (`claude_desktop_config.json`):
 }
 ```
 
-Restart Claude Desktop. You should see 24 tools: `get_me`, `server_status`,
-15 read-only tools (playback state, top artists/tracks, recently played,
-saved tracks/albums, followed artists, playlists, catalog search,
-track/artist/album metadata), and 7 playlist write tools.
+Restart Claude Desktop. You should see 33 tools: `get_me`, `server_status`,
+15 read-only Spotify tools (playback state, top artists/tracks, recently
+played, saved tracks/albums, followed artists, playlists, catalog search,
+track/artist/album metadata), 7 playlist write tools, and 9 local-analytics
+tools over your listening history.
 
 ## Playlist writes and confirmation
 
@@ -97,6 +99,54 @@ A local audit log of every executed (or dry-run) write is kept at
 timestamp, the action, a hash of its arguments, and the resulting
 `snapshot_id` where relevant.
 
+## Local listening-history analytics
+
+Nine tools query a local DuckDB database built from your Spotify data —
+listening summaries, hour-of-day/day-of-week breakdowns, skip rates, top
+artists/tracks/albums, taste drift between two periods, artists you've
+dropped, tracks worth rediscovering, plus a guarded free-form SQL escape
+hatch (`query_listening_history`) for anything the named tools don't cover.
+None of this comes from the Spotify API — it's entirely local, built from
+your own export.
+
+**Try it now with synthetic data**, before your real export arrives:
+
+```bash
+uv run spotify-mcp make-fixture ./fixture
+uv run spotify-mcp ingest ./fixture
+```
+
+This generates ~8000 realistic plays across 26 months (with artists that
+fade out, artists that show up recently, a diurnal listening curve, and a
+believable skip pattern) and loads them into
+`<user data dir>/spotify-mcp/listening.duckdb`. Ask Claude things like "when
+do I listen the most?" or "which artists have I dropped?" and it'll answer
+from this synthetic data — useful for seeing the tools work, not for
+learning anything about your actual listening.
+
+**When your real export arrives** (see below), ingest it the same way:
+
+```bash
+uv run spotify-mcp ingest /path/to/your/spotify-export
+```
+
+This **replaces** whatever was ingested before (fixture or a previous real
+export) — the analytics tables are always fully rebuilt from everything
+ever ingested. Re-running `ingest` on files you've already loaded is a
+no-op (tracked by content hash), so it's safe to point it at the same
+directory repeatedly, e.g. after adding newer export files.
+
+**Set your timezone** for hour-of-day/day-of-week results to mean anything —
+without it, everything is bucketed in UTC:
+
+```
+SPOTIFY_MCP_TIMEZONE=Europe/Zagreb
+```
+
+(any IANA zone name, e.g. `America/New_York`). Re-run `ingest` after
+changing it — the local-time columns are computed at ingest time, not on
+the fly.
+
 ## Checking what the API actually returns
 
 Spotify's Web API changed substantially in 2026, and the reference docs
@@ -118,7 +168,9 @@ instead of relying on this repo's models being right.
 
 - **Token**: `<user config dir>/spotify-mcp/token.json` (Windows:
   `%LOCALAPPDATA%\spotify-mcp\token.json`). Never commit this.
-- **Analytics DB** (Phase 4+): `<user data dir>/spotify-mcp/listening.duckdb`.
+- **Analytics DB**: `<user data dir>/spotify-mcp/listening.duckdb` (Windows:
+  same `%LOCALAPPDATA%\spotify-mcp\` folder).
+- **Write audit log**: `<user data dir>/spotify-mcp/audit.jsonl`.
 - **Logs**: stderr, JSON lines. stdout is reserved for the MCP protocol.
 
 ## Development
@@ -131,7 +183,9 @@ uv run ruff format .
 
 ## Requesting your Extended Streaming History
 
-For Phase 4 (local analytics), you'll need Spotify's Extended Streaming
+For real (non-synthetic) analytics, you'll need Spotify's Extended Streaming
 History export: **Spotify → Settings → Account → Privacy settings → Request
-data → Extended streaming history**. This can take several weeks to arrive —
-worth requesting now.
+data → Extended streaming history**. This can take several weeks to arrive.
+It downloads as one or more `endsong_N.json` files (or similarly named) — the
+ingest command reads every `.json` file in the directory you point it at, so
+just extract the download and run `spotify-mcp ingest` on that folder.

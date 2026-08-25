@@ -711,6 +711,42 @@ and get sensible answers; `test_sqlguard.py`'s attack corpus is fully blocked;
 no-op. When your real export lands, the same command ingests it — and if the field names differ
 from what §4 assumes, it fails loudly and we fix a mapping, not a rewrite.
 
+> **Phase 4 update:** Built and verified — 119 tests passing, full pipeline (fixture → ingest →
+> all 9 tools → guardrails) run end to end against a real, isolated DuckDB. Deltas from the
+> original design:
+>
+> - **`dim_track`/`dim_artist` are views, not tables.** No separate rebuild step, always
+>   consistent with `plays` by construction. `dim_track.duration_ms` is dropped entirely rather
+>   than kept as an always-`NULL` placeholder — the API-enrichment path that would populate it
+>   is still deferred past Phase 6 (R6), so a column that's never anything but `NULL` wasn't
+>   worth carrying.
+> - **True idempotency comes from a `file_hash` skip-list (`ingested_files`), not the
+>   `(track_uri, ts_utc, ms_played)` fact-table dedup.** The original framing had the fact-table
+>   dedup doing double duty; in practice, re-ingesting an unchanged export now skips every file
+>   outright (a real no-op, not a re-derive-to-the-same-answer). The row-level dedup is still
+>   there as a second layer, for the case where the *same play* appears in two *different*
+>   (non-identical) export files — e.g. two overlapping data requests. A real bug surfaced here
+>   during testing: two byte-identical files ingested in one run collided on the skip-list's own
+>   primary key, since it was computed once at the start of the run rather than updated as each
+>   file was processed. Fixed and covered by a regression test
+>   (`test_byte_identical_files_in_one_run_are_caught_by_the_hash_skip_list`).
+> - **`tzdata` added as a Windows-only dependency.** Windows doesn't ship an IANA timezone
+>   database; DuckDB's own `AT TIME ZONE` conversion works regardless (it bundles its own via
+>   ICU), but Python's `zoneinfo.ZoneInfo()` — used to validate `SPOTIFY_MCP_TIMEZONE` at ingest
+>   time — raised `ZoneInfoNotFoundError` without it. Caught by testing on your actual machine,
+>   not by reasoning about it in the abstract.
+> - **`taste_drift` takes four separate date-string arguments** (`period_a_start`,
+>   `period_a_end`, `period_b_start`, `period_b_end`), not two `[start, end]` pairs — MCP tool
+>   schemas don't have a clean way to express a tuple/pair argument, and four flat strings are
+>   unambiguous.
+> - `connect_ro`/`connect_rw`/`run_guarded` live in a new `analytics/db.py`, not called out in
+>   the original file list — connection lifecycle and the row-cap/timeout wrapper needed a home
+>   separate from `sqlguard.py`'s pure validation and `queries.py`'s query bodies.
+> - `enable_external_access = false` and the read-only connection were verified empirically, not
+>   just documented as intended: a live test confirmed `read_csv()` is blocked with a
+>   `PermissionException` and `con.interrupt()` from a watchdog thread genuinely cancels a
+>   running query.
+
 ### Phase 5 — Resolver + chart pipeline
 `resolve_tracks`, `build_playlist_from_candidates`, the resolution cache.
 **Verify:** feed a known-tricky list (a track with a famous karaoke version, one with a sped-up
