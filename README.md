@@ -31,6 +31,12 @@ outright impossible rather than just harder.
    project. Note its **Client ID**; no client secret is used (this server
    authorizes via PKCE).
 
+   Two Spotify-side requirements as of 2026, not something this project
+   controls: the account that owns the app needs **Spotify Premium**, and
+   each Development Mode app is capped at **5 authorized users**. Every
+   person running this server needs to create their own app and use their
+   own Client ID — this repo never bakes one in.
+
 2. **Register the redirect URI.** In the app's settings, add exactly:
 
    ```
