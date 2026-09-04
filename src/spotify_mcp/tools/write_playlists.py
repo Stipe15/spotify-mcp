@@ -18,10 +18,9 @@ from mcp_types import ToolAnnotations
 
 from spotify_mcp.server import AppContext
 from spotify_mcp.tools import confirm
-from spotify_mcp.tools._util import guarded
+from spotify_mcp.tools._util import chunks, guarded
 
 _COVER_IMAGE_MAX_BYTES = 256 * 1024
-_ITEMS_PER_REQUEST = 100
 
 _WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
 _WRITE_IDEMPOTENT = ToolAnnotations(
@@ -42,10 +41,6 @@ def _validate_uris(uris: list[str]) -> None:
             + (f" (+{len(bad) - 5} more)" if len(bad) > 5 else "")
             + '. Expected the form "spotify:track:<id>" or "spotify:episode:<id>".'
         )
-
-
-def _chunks(items: list[str], size: int = _ITEMS_PER_REQUEST) -> list[list[str]]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 async def _fetch_playlist_summary(app: AppContext, playlist_id: str) -> dict[str, Any]:
@@ -164,9 +159,9 @@ def register(mcp: MCPServer) -> None:
         if pending is not None:
             return pending
 
-        chunks = _chunks(uris)
+        uri_chunks = chunks(uris)
         snapshot_ids: list[str] = []
-        for i, chunk in enumerate(chunks):
+        for i, chunk in enumerate(uri_chunks):
             body: dict[str, Any] = {"uris": chunk}
             if i == 0 and position is not None:
                 body["position"] = position
@@ -193,7 +188,7 @@ def register(mcp: MCPServer) -> None:
         )
         return confirm.executed(
             "add_playlist_items",
-            {"added": len(uris), "chunks": len(chunks), "snapshot_ids": snapshot_ids},
+            {"added": len(uris), "chunks": len(uri_chunks), "snapshot_ids": snapshot_ids},
         )
 
     @mcp.tool(
@@ -232,8 +227,10 @@ def register(mcp: MCPServer) -> None:
         if pending is not None:
             return pending
 
-        chunks = _chunks(uris) or [[]]
-        first = await app.spotify.put(f"/playlists/{playlist_id}/items", json={"uris": chunks[0]})
+        uri_chunks = chunks(uris) or [[]]
+        first = await app.spotify.put(
+            f"/playlists/{playlist_id}/items", json={"uris": uri_chunks[0]}
+        )
         if first.get("dry_run"):
             confirm.write_audit(
                 app.settings,
@@ -245,7 +242,7 @@ def register(mcp: MCPServer) -> None:
             return confirm.executed("replace_playlist_items", first)
 
         snapshot_ids = [first["snapshot_id"]] if first.get("snapshot_id") else []
-        for chunk in chunks[1:]:
+        for chunk in uri_chunks[1:]:
             result = await app.spotify.post(f"/playlists/{playlist_id}/items", json={"uris": chunk})
             if result.get("snapshot_id"):
                 snapshot_ids.append(result["snapshot_id"])
@@ -533,7 +530,7 @@ async def _add_preview(
         "counts": {
             "adding": len(uris),
             "resulting_size": current + len(uris),
-            "api_calls": len(_chunks(uris)),
+            "api_calls": len(chunks(uris)),
         },
         "irreversible": False,
     }

@@ -30,3 +30,11 @@ def guarded(fn: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
             raise ToolError(str(exc)) from exc
 
     return wrapper
+
+
+ITEMS_PER_REQUEST = 100
+
+
+def chunks(items: list[str], size: int = ITEMS_PER_REQUEST) -> list[list[str]]:
+    """Split a list of URIs into Spotify's max-100-per-request batches."""
+    return [items[i : i + size] for i in range(0, len(items), size)]

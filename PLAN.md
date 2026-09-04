@@ -754,6 +754,39 @@ edit, one live album, one artist with a tribute band, one deliberately nonexiste
 every substitution is rejected and the fake appears in `unresolved`. Then the real thing: "make
 me a playlist of the best pop songs right now," end to end.
 
+> **Phase 5 update:** Built and verified — 157 tests passing (38 new: `test_resolver_match.py`'s
+> pure normalize/match unit tests, `test_resolve.py`'s mocked-transport orchestration tests), plus
+> two live checks against the real catalog and the real MCP server. Deltas from the original design:
+>
+> - **The resolution cache lives in its own file** (`resolver_cache.duckdb`), not "the same file"
+>   as the listening-history analytics database as originally sketched. Resolution has to work
+>   whether or not you've ever run `spotify-mcp ingest` — tying it to the analytics DB would have
+>   made the chart pipeline depend on a database that might not exist yet.
+> - **The cache stores the objective resolution outcome — including its real confidence — rather
+>   than baking in the caller's `strict` preference.** A "weak" match found once is cached as
+>   weak; whether that's accepted into `resolved` or held back to `unresolved` is decided fresh
+>   on every call, cache hit or not. The alternative (caching a strict-mode rejection as a hard
+>   negative) would have permanently poisoned a later non-strict lookup for the same candidate.
+> - The cache also stores `matched_artist_name`/`matched_title`, not just ids — a cache hit shows
+>   what was actually matched, not just an echo of the input.
+> - **Verified live against the real Spotify catalog**, not just synthetic fixtures: "Bohemian
+>   Rhapsody" and "Rolling in the Deep" — two of the most-covered, most-karaoke'd songs that
+>   exist — both resolved to the genuine original at `exact` confidence despite the catalog noise,
+>   and a deliberately fake artist correctly exhausted filtered search, paged search, and relaxed
+>   search before landing in `unresolved`. Also verified through the actual MCP server in
+>   `dry_run` mode: a resolve → preview → confirm → dry-run-execute round trip, and
+>   `skip_unresolved=false` correctly refusing to create anything when one candidate didn't
+>   resolve. No real playlist was created in this verification — left, as with every phase's
+>   "real write" check, for you to do yourself.
+> - Both composite tools share one confirmation like every other write tool: `build_playlist_from_candidates`
+>   resolves candidates on *both* the preview call and the confirm call (cheap the second time,
+>   since everything just resolved is now cached), rather than trying to carry resolution state
+>   across the two calls server-side — keeping it stateless and consistent with how every other
+>   write tool's confirm-token binding works.
+> - The `_chunks` helper duplicated between `write_playlists.py` and (originally) `composite.py`
+>   was promoted to a shared `tools/_util.py` (`chunks`) instead of one module importing the
+>   other's private name.
+
 ### Phase 6 — Polish
 Cache tuning, log levels, `README.md` written from scratch (create the Spotify app, register
 `http://127.0.0.1:8888/callback`, `login`, request the export, `ingest`, wire into Claude

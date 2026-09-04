@@ -82,6 +82,10 @@ class Settings:
     query_timeout_s: float = 10.0
     analytics_max_rows: int = 5_000
 
+    # Resolver (PLAN.md §7). Below this resolution rate, a playlist-build
+    # preview is flagged low_confidence rather than presented as routine.
+    resolver_min_confidence_rate: float = 0.7
+
     config_dir: Path = field(
         default_factory=lambda: Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR))
     )
@@ -103,6 +107,10 @@ class Settings:
     @property
     def analytics_db_path(self) -> Path:
         return self.data_dir / "listening.duckdb"
+
+    @property
+    def resolver_cache_db_path(self) -> Path:
+        return self.data_dir / "resolver_cache.duckdb"
 
     @classmethod
     def load(cls) -> Settings:
@@ -128,6 +136,7 @@ class Settings:
             substantial_ms=_env_int("SPOTIFY_MCP_SUBSTANTIAL_MS", 30_000),
             query_timeout_s=_env_float("SPOTIFY_MCP_QUERY_TIMEOUT_S", 10.0),
             analytics_max_rows=_env_int("SPOTIFY_MCP_ANALYTICS_MAX_ROWS", 5_000),
+            resolver_min_confidence_rate=_env_float("SPOTIFY_MCP_RESOLVER_MIN_RATE", 0.7),
         )
         settings.config_dir.mkdir(parents=True, exist_ok=True)
         settings.data_dir.mkdir(parents=True, exist_ok=True)
