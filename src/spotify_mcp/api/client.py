@@ -1,9 +1,11 @@
 """Thin async HTTP client for the Spotify Web API.
 
 Handles: bearer injection via TokenManager, a bounded concurrency semaphore,
-a rolling rate limiter, 429/5xx backoff, one 401-triggered re-auth retry, and
-a dry-run mode that logs non-GET requests instead of sending them. Deliberately
-not a general-purpose client — every call site names an actual endpoint from
+a rolling rate limiter, 429/5xx backoff, one 401-triggered re-auth retry, a
+dry-run mode that logs non-GET requests instead of sending them, and
+optional conditional-GET (ETag) caching — see api/cache.py for why this
+saves bandwidth/latency but not Spotify rate-limit quota. Deliberately not
+a general-purpose client — every call site names an actual endpoint from
 PLAN.md §2; nothing here guesses at Spotify's URL shape.
 """
 
@@ -15,6 +17,7 @@ from typing import Any
 
 import httpx2
 
+from spotify_mcp.api.cache import ETagCache, cache_key
 from spotify_mcp.api.ratelimit import RollingWindowLimiter
 from spotify_mcp.auth.manager import TokenManager
 from spotify_mcp.config import API_BASE_URL, Settings
@@ -30,6 +33,7 @@ class SpotifyClient:
         settings: Settings,
         token_manager: TokenManager,
         transport: httpx2.AsyncBaseTransport | None = None,
+        etag_cache: ETagCache | None = None,
     ):
         self._settings = settings
         self._tokens = token_manager
@@ -38,9 +42,13 @@ class SpotifyClient:
         )
         self._semaphore = asyncio.Semaphore(settings.max_concurrency)
         self._limiter = RollingWindowLimiter(settings.calls_per_30s)
+        self._etag_cache = etag_cache
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    def cache_stats(self) -> dict[str, Any] | None:
+        return self._etag_cache.stats() if self._etag_cache is not None else None
 
     async def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self._request("GET", path, params=params)
@@ -101,6 +109,14 @@ class SpotifyClient:
         token = await self._tokens.bearer_token()
         headers = {"Authorization": f"Bearer {token}", **(extra_headers or {})}
 
+        cache_entry = None
+        ck = None
+        if method == "GET" and self._etag_cache is not None:
+            ck = cache_key(path, params)
+            cache_entry = self._etag_cache.get(ck)
+            if cache_entry is not None:
+                headers["If-None-Match"] = cache_entry[0]
+
         attempt = 0
         while True:
             await self._limiter.acquire()
@@ -152,9 +168,17 @@ class SpotifyClient:
             if response.status_code >= 400:
                 _raise_for_error(response)
 
+            if response.status_code == 304 and cache_entry is not None:
+                return cache_entry[1]
+
             if response.status_code == 204 or not response.content:
                 return {}
-            return response.json()
+
+            body = response.json()
+            etag = response.headers.get("ETag")
+            if ck is not None and etag and self._etag_cache is not None:
+                self._etag_cache.put(ck, etag, body)
+            return body
 
 
 def _backoff_delay(attempt: int) -> float:

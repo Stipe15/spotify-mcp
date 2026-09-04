@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from mcp.server import MCPServer
 
+from spotify_mcp.api.cache import ETagCache
 from spotify_mcp.api.client import SpotifyClient
 from spotify_mcp.auth.manager import TokenManager
 from spotify_mcp.config import Settings
@@ -31,13 +32,15 @@ def build_server(settings: Settings) -> MCPServer:
     @asynccontextmanager
     async def lifespan(_: MCPServer) -> AsyncIterator[AppContext]:
         token_manager = TokenManager(settings)
-        spotify = SpotifyClient(settings, token_manager)
+        etag_cache = ETagCache(settings.http_cache_path) if settings.http_cache_enabled else None
+        spotify = SpotifyClient(settings, token_manager, etag_cache=etag_cache)
         confirmations = ConfirmationStore(ttl_s=settings.confirm_token_ttl_s)
         logger.info(
-            "spotify-mcp starting: dry_run=%s authorized=%s allow_removals=%s",
+            "spotify-mcp starting: dry_run=%s authorized=%s allow_removals=%s http_cache=%s",
             settings.dry_run,
             token_manager.is_authorized,
             settings.allow_removals,
+            settings.http_cache_enabled,
         )
         try:
             yield AppContext(
@@ -49,6 +52,8 @@ def build_server(settings: Settings) -> MCPServer:
         finally:
             await spotify.aclose()
             await token_manager.aclose()
+            if etag_cache is not None:
+                etag_cache.close()
             logger.info("spotify-mcp shutting down")
 
     mcp = MCPServer(

@@ -792,6 +792,33 @@ Cache tuning, log levels, `README.md` written from scratch (create the Spotify a
 `http://127.0.0.1:8888/callback`, `login`, request the export, `ingest`, wire into Claude
 Desktop with a working config JSON), full ruff clean, final test pass.
 
+> **Phase 6 update:** Built and verified — 166 tests passing (9 new, `test_http_cache.py`), a
+> real 304 confirmed against the live API, README rewritten from scratch. Deltas:
+>
+> - **§5's caching design said a 304 "costs no quota" — verified false.** A live check of
+>   response headers on `/me`, `/tracks/{id}`, `/artists/{id}`, and `/me/top/tracks` found
+>   `ETag` present but `Cache-Control: max-age=0` on every one — Spotify is explicit that a
+>   response must be revalidated on *every* request, never served from a blind local TTL. A
+>   conditional GET is still one HTTP call, identical to what an unconditional GET would have
+>   cost against the rate limiter. So `api/cache.py`'s ETag cache is real and verified (a genuine
+>   304 came back from the live API in testing, cache stats correctly went 0 → 2 entries across
+>   real calls) — but it buys bandwidth and latency, not rate-limit headroom. The originally
+>   sketched "long-lived TTL cache for immutable-ish metadata" was **not** built, because
+>   `max-age=0` on `/tracks/{id}` and `/artists/{id}` responses means the server is actively
+>   telling us not to do that.
+> - `server_status` now reports the shape originally sketched in §2.1 but never fully built:
+>   `analytics_db` (present/total_plays/date range, live-queried) and `http_cache_stats`, plus
+>   `allow_removals` so the destructive-write gate's state is visible without checking `.env`.
+> - Logging audited end to end: no `print()` outside the CLI (confirmed nothing writes to
+>   stdout from the server path, which would corrupt the MCP stdio stream), no token or
+>   Authorization-header value ever reaches a log line, log levels reviewed as appropriately
+>   quiet for default operation. Found and removed one piece of dead scaffold code
+>   (`__init__.py`'s unused `uv init`-generated `main()`/`print` stub, superseded by
+>   `__main__.py` since Phase 1 but never deleted).
+> - `.env.example` had drifted badly — it only listed Phase 1's four settings against what was,
+>   by Phase 6, sixteen. Rewritten to match `Settings.load()` exactly, grouped and commented by
+>   the phase that introduced each one.
+
 Commits at each phase boundary with real messages. I have not committed `PLAN.md` yet since
 we're about to iterate on it — I'll commit once you've signed off.
 

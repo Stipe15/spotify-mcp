@@ -86,6 +86,12 @@ class Settings:
     # preview is flagged low_confidence rather than presented as routine.
     resolver_min_confidence_rate: float = 0.7
 
+    # Conditional-GET (ETag) cache for the Spotify client (PLAN.md §5/§6).
+    # Saves bandwidth/latency on unchanged responses, not rate-limit quota —
+    # see api/cache.py for why. On by default; off is only useful for
+    # debugging a caching-related discrepancy.
+    http_cache_enabled: bool = True
+
     config_dir: Path = field(
         default_factory=lambda: Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR))
     )
@@ -112,6 +118,10 @@ class Settings:
     def resolver_cache_db_path(self) -> Path:
         return self.data_dir / "resolver_cache.duckdb"
 
+    @property
+    def http_cache_path(self) -> Path:
+        return self.cache_dir / "http_etag_cache.sqlite3"
+
     @classmethod
     def load(cls) -> Settings:
         load_dotenv()
@@ -137,6 +147,7 @@ class Settings:
             query_timeout_s=_env_float("SPOTIFY_MCP_QUERY_TIMEOUT_S", 10.0),
             analytics_max_rows=_env_int("SPOTIFY_MCP_ANALYTICS_MAX_ROWS", 5_000),
             resolver_min_confidence_rate=_env_float("SPOTIFY_MCP_RESOLVER_MIN_RATE", 0.7),
+            http_cache_enabled=_env_bool("SPOTIFY_MCP_HTTP_CACHE_ENABLED", True),
         )
         settings.config_dir.mkdir(parents=True, exist_ok=True)
         settings.data_dir.mkdir(parents=True, exist_ok=True)
