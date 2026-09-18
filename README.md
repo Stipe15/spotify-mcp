@@ -230,6 +230,8 @@ instead of relying on this repo's models being right.
 | HTTP ETag cache | `<user cache dir>/spotify-mcp/http_etag_cache.sqlite3` |
 | Logs | stderr, JSON lines (stdout is reserved for the MCP protocol) |
 
+![diagram](diagram.jpeg)
+
 Never commit the token file, the databases, or `.env` — all gitignored
 already.
 
